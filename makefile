@@ -1,23 +1,19 @@
-# the compiler
-CC = gcc-12
-
-# the compiler flags
-CFLAGS += -std=c17
-CFLAGS += -no-pie
-CFLAGS += -g3
-CFLAGS += -ggdb
-CFLAGS += -Wall
-CFLAGS += -Wextra
-CFLAGS += -Warray-bounds
-CFLAGS += -Wconversion
-CFLAGS += -Wmissing-braces
-CFLAGS += -Wno-parentheses
-CFLAGS += -Wno-format-truncation
-CFLAGS += -Wpedantic
-CFLAGS += -Wstrict-prototypes
-CFLAGS += -Wwrite-strings
-CFLAGS += -Winline
-CFLAGS += -s
+CFLAGS 	+= -std=c17
+CFLAGS 	+= -no-pie
+CFLAGS 	+= -g3
+CFLAGS 	+= -ggdb
+CFLAGS 	+= -Wall
+CFLAGS 	+= -Wextra
+CFLAGS 	+= -Warray-bounds
+CFLAGS 	+= -Wconversion
+CFLAGS 	+= -Wmissing-braces
+CFLAGS 	+= -Wno-parentheses
+CFLAGS 	+= -Wno-format-truncation
+CFLAGS 	+= -Wpedantic
+CFLAGS 	+= -Wstrict-prototypes
+CFLAGS 	+= -Wwrite-strings
+CFLAGS 	+= -Winline
+CFLAGS 	+= -s
 
 #CFLAGS += -fanalyzer
 #CFLAGS += -fno-builtin
@@ -32,25 +28,27 @@ CFLAGS += -s
 #CFLAGS += -fsanitize=bool
 #CFLAGS += -fsanitize=pointer-overflow
 #CFLAGS += -fsanitize-address-use-after-scope
-#CFLAGS += -O3
+CFLAGS 	+= -O2
+CFLAGS 	+= -D_FORTIFY_SOURCE=2
 
-SRC = src
-OBJ = obj
-BINDIR = bin
-BIN = $(BINDIR)/Verse
-SRCS = $(wildcard $(SRC)/*.c)
-OBJS = $(patsubst $(SRC)/%.c, $(OBJ)/%.o, $(SRCS))
+BINDIR 	:= bin
+BIN 	:= $(BINDIR)/msh
+SRCS 	:= $(wildcard src/*.c)
+OBJS 	:= $(patsubst src/%.c, obj/%.o, $(SRCS))
 
 all: $(BIN)
 
 $(BIN): $(OBJS)
-	$(CC) -D_FORTIFY_SOURCE=2 -o $@ $^ $(CFLAGS) 
+	$(CC) $(CFLAGS) -o $@ $^ 
 
-$(OBJ)/%.o: $(SRC)/%.c
+obj/%.o: src/%.c
 	$(CC) $(CFLAGS) -c $< -o $@ 
 
 clean:
-	$(RM) -rf $(OBJ)/* $(BINDIR)/*
+	$(RM) -rf $(OBJS) 
 
-.PHONY: clean
+fclean:
+	$(RM) -rf $(BIN)
+
+.PHONY: clean all fclean
 .DELETE_ON_ERROR:
