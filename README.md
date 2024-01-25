@@ -2,12 +2,6 @@
 
 M-Shell (msh) is a simple shell implementation in C that provides basic shell functionality, including executing commands, built-in commands, and handling process execution.
 
-## Features
-
-- Execute external programs and built-in commands.
-- Implement built-in commands like `cd`, `help`, `exit`, `kill`, and `whoami`.
-- Basic command-line interface with input parsing.
-
 ## Getting Started
 
 ### Prerequisites
@@ -51,8 +45,6 @@ The M-Shell provides a basic command-line interface similar to other shell progr
 - `kill`: Send a signal to a process.
 - `whoami`: Display the current user's username.
 
-Refer to the built-in command implementations in the source code for more details.
-
 ## Contributing
 
 Contributions are welcome! If you find any issues, want to improve existing features, or add new features, feel free to open a pull request.
@@ -62,7 +54,5 @@ Contributions are welcome! If you find any issues, want to improve existing feat
 This project is licensed under the [MIT License](LICENSE) - see the LICENSE file for details.
 
 ## Acknowledgements
-This project was inspired by various shell implementations and aims to provide a simple example of a basic shell program. Special thanks to the creators of the following shell projects for their inspiration and guidance:
 
 - [lsh](https://github.com/brenns10/lsh): A simple shell implementation in C, which served as a reference for this project.
-- Other open-source shell projects that provided valuable insights and inspiration.
