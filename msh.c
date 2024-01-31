@@ -1,12 +1,5 @@
-
-
-#ifdef _POSIX_C_SOURCE
 #undef _POSIX_C_SOURCE
-#endif
-
-#ifdef _XOPEN_SOURCE
 #undef _XOPEN_SOURCE
-#endif
 
 #define _POSIX_C_SOURCE 200819L
 #define _XOPEN_SOURCE 700
@@ -31,21 +24,23 @@
 enum {
     MSH_SUCCESS = 0,
     MSH_FAILURE,
+    MSH_EXIT,
 };
 
-/* Taking an int like argc would simplify these functions. */
-static int msh_cd(const char *const *argv);
-static int msh_help(const char *const *argv);
-static int msh_exit(const char *const *argv);
-static int msh_kill(const char *const *argv);
-static int msh_whoami(const char *const *argv);
+typedef int (builtin_func) (int argc, const char *const *argv);
+
+static builtin_func msh_cd;
+static builtin_func msh_help;
+static builtin_func msh_exit;
+static builtin_func msh_kill;
+static builtin_func msh_whoami;
 
 /* 
 *	List of builtin commands, followed by their corresponding functions. 
 */
 static struct {
     const char *const builtin_str;
-    int (* const builtin_func)(const char *const *);
+    builtin_func *const func;
 } const builtin[] = {
     { "cd", &msh_cd },
     { "help", &msh_help },
@@ -54,58 +49,59 @@ static struct {
     { "whoami", &msh_whoami },
 };
 
-static int msh_whoami(const char *const *argv)
+static int msh_whoami(int argc, const char *const *argv)
 {
+    if (argc != 1) {
+        fprintf(stderr, "%s: extra operand to \"whoami\".\n", argv[0]);
+        return MSH_SUCCESS;
+    }
+
     const uid_t uid = geteuid();
     const struct passwd *const pw = (errno = 0, getpwuid(uid));
 
-    if (argv[1]) {
-        fputs("-msh: extra operand to \"whoami\".\n", stderr);
-    } else if (!pw || errno) {
-        perror("-msh: ");
+    if (!pw || errno) {
+        fprintf(stderr, "%s: %s.\n", argv[0], strerror(errno));
     } else {
         puts(pw->pw_name);
     }
     return MSH_SUCCESS;
 }
 
-static int msh_kill(const char *const *argv)
+static int msh_kill(int argc, const char *const *argv)
 {
-    if (!argv[1] || !argv[2]) {
-        fputs("-msh: expected argument to \"kill\".\n", stderr);
-    } else if (argv[3]) {
-        fputs("-msh: excess arguments to \"kill\".\n", stderr);
-    } else if (kill((pid_t) strtol(argv[2], NULL, 10), (int) strtol(argv[1], NULL, 10)) == -1) {
-        perror("-msh ");
+    if (argc < 3) {
+        fprintf(stderr, "%s: expected argument to \"kill\".\n", argv[0]);
+    } else if (argc > 3) {
+        fprintf(stderr, "%s: excess arguments to \"kill\".\n", argv[0]);
+    } else if (kill((pid_t) strtol(argv[2], NULL, 10), (int) strtol(argv[1],
+                NULL, 10)) == -1) {
+        fprintf(stderr, "%s: %s.\n", argv[0], strerror(errno));
     }
     return MSH_SUCCESS;
 }
 
-static int msh_cd(const char *const *argv)
+static int msh_cd(int argc, const char *const *argv)
 {
-    (void)*argv++;
-    const char *const dir = *argv++;
-    
-    if (!dir) {
-        fputs("-msh: expected argument to \"cd\".\n", stderr);
-    } else if (*argv) {
-        fputs("-msh: excess arguments to \"cd\".\n", stderr);
-    } else if (chdir(dir)) {
-        perror("-msh");
+    if (argc == 1) {
+        fprintf(stderr, "%s: expected argument to \"cd\".\n", argv[0]);
+    } else if (argc > 2) {
+        fprintf(stderr, "%s: excess arguments to \"cd\".\n", argv[0]);
+    } else if (chdir(argv[1])) {
+        fprintf(stderr, "%s: %s.\n", argv[0], strerror(errno));
     }
     return MSH_SUCCESS;
 }
 
-static int msh_help(const char *const *argv)
+static int msh_help(int argc, const char *const *argv)
 {
-    if (argv[1]) {
-        fputs("-msh: excess arguments to \"help\".\n", stderr);
+    if (argc != 1) {
+        fprintf(stderr, "%s: excess arguments to \"help\".\n", argv[0]);
         return MSH_SUCCESS;
     }
 
     puts("M-Shell\n"
-         "Type program names and arguments, and hit enter.\n"
-         "The following are built-in:\n");
+        "Type program names and arguments, and hit enter.\n"
+        "The following are built-in:\n");
 
     for (size_t i = 0; i < ARRAY_CARDINALITY(builtin); ++i) {
         puts(builtin[i].builtin_str);
@@ -115,10 +111,10 @@ static int msh_help(const char *const *argv)
     return MSH_SUCCESS;
 }
 
-static int msh_exit(const char *const *argv)
+static int msh_exit(int argc, const char *const *argv)
 {
-    if (argv[2]) {
-        fputs("-msh: excess arguments to \"help\".\n", stderr);
+    if (argc > 2) {
+        fprintf(stderr, "%s: excess arguments to \"exit\".\n", argv[0]);
         return MSH_SUCCESS;
     }
 
@@ -127,7 +123,7 @@ static int msh_exit(const char *const *argv)
         return strtol(argv[1], NULL, 10) & 0XFF;
     }
 
-    return MSH_SUCCESS;
+    return MSH_EXIT;
 }
 
 /* Calls fork and execvp to duplicate and replace a process, returns MSH_FAILURE 
@@ -137,16 +133,16 @@ static int msh_launch(const char *const *argv)
 {
     int status = 0;
     int pid = fork();
-    
+
     if (!pid) {
         if (execvp(argv[0], (char *const *) argv) == -1) {
-            perror("msh: ");
+            fprintf(stderr, "%s: %s.\n", argv[0], strerror(errno));
             return MSH_FAILURE;
         }
     }
 
     if (pid == -1) {
-        perror("msh: ");
+        fprintf(stderr, "%s: %s.\n", argv[0], strerror(errno));
         return MSH_FAILURE;
     }
 
@@ -160,7 +156,7 @@ static int msh_launch(const char *const *argv)
 /* Returns MSH_SUCCESS in the absence of commands or return the result of the 
  * executed command if argv[0] was a built-in command.
  */
-static int msh_execute(const char *const *argv)
+static int msh_execute(int argc, const char *const *argv)
 {
     if (!argv[0]) {
         /* No commands were entered. */
@@ -169,7 +165,7 @@ static int msh_execute(const char *const *argv)
 
     for (size_t i = 0; i < ARRAY_CARDINALITY(builtin); ++i) {
         if (!strcmp(argv[0], builtin[i].builtin_str)) {
-            return (*builtin[i].builtin_func) (argv);
+            return (*builtin[i].func) (argc, argv);
         }
     }
     return msh_launch(argv);
@@ -222,7 +218,7 @@ static char *msh_read_line(int *err_code)
 /* Returns a pointer to pointers to null-terminated strings, or a NULL pointer on failure. 
 *  The function does not free line in any case.
 */
-static char **msh_parse_args(char *line)
+static char **msh_parse_args(char *line, int *argc)
 {
     const size_t page_size = 128;
     size_t position = 0;
@@ -246,6 +242,7 @@ static char **msh_parse_args(char *line)
     if (tokens) {
         tokens[position] = NULL;
     }
+    *argc = (int) position;
     return tokens;
 }
 
@@ -264,38 +261,42 @@ static int msh_loop(void)
         char *cwd = getcwd(NULL, 0);
         char *base_name = cwd ? basename(cwd) : NULL;
 
-        printf("%s:~/%s $ ", pw ? pw->pw_name : "", base_name? base_name : "");
+        printf("%s:~/%s $ ", pw ? pw->pw_name : "", base_name ? base_name : "");
 
         int err_code = 0;
 
         line = msh_read_line(&err_code);
         if (!line) {
             if (err_code == ENOMEM) {
-                perror("-msh ");
+                perror("realloc()");
             }
             fputc('\n', stdout);
             goto out2;
         }
-    
-        if (!*line) {
-            continue;
-        }
 
-        if (!(args = msh_parse_args(line))) {
-            perror("-msh ");
+        if (!*line) {
             goto out1;
         }
 
-        status = msh_execute((const char *const *) args);
+        int argc = 0;
+
+        if (!(args = msh_parse_args(line, &argc))) {
+            perror("realloc()");
+            goto out1;
+        }
+
+        status = msh_execute(argc, (const char *const *) args);
+
+        free(args);
       out1:
         free(line);
-        free(args);
       out2:
         free(cwd);
 
-        if (fail) return 1;
+        if (fail)
+            return 1;
     } while (status == MSH_SUCCESS);
-    
+
     return status;
 }
 
