@@ -1,6 +1,6 @@
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://https://github.com/Melkor-1/msh/edit/main/LICENSE)
-
 # M-Shell (msh)
+
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://https://github.com/Melkor-1/msh/edit/main/LICENSE)
 
 M-Shell (msh) is a simple shell implementation in C that provides basic shell functionality, including executing commands, built-in commands, and handling process execution.
 
