@@ -51,10 +51,6 @@ The M-Shell provides a basic command-line interface similar to other shell progr
 
 Contributions are welcome! If you find any issues, want to improve existing features, or add new features, feel free to open a pull request.
 
-## License
-
-This project is licensed under the [MIT License](LICENSE) - see the LICENSE file for details.
-
 ## Acknowledgements
 
 - [lsh](https://github.com/brenns10/lsh): A simple shell implementation in C, which served as a reference for this project.
