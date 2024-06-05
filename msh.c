@@ -27,7 +27,7 @@ enum {
     MSH_EXIT,
 };
 
-typedef int (builtin_func) (int argc, const char *const *argv);
+typedef int builtin_func(int argc, const char *const *argv);
 
 static builtin_func msh_cd;
 static builtin_func msh_help;
@@ -35,9 +35,7 @@ static builtin_func msh_exit;
 static builtin_func msh_kill;
 static builtin_func msh_whoami;
 
-/* 
-*	List of builtin commands, followed by their corresponding functions. 
-*/
+/* List of built-in commands, followed by their corresponding functions. */
 static struct {
     const char *const builtin_str;
     builtin_func *const func;
@@ -59,7 +57,7 @@ static int msh_whoami(int argc, const char *const *argv)
     const uid_t uid = geteuid();
     const struct passwd *const pw = (errno = 0, getpwuid(uid));
 
-    if (!pw || errno) {
+    if (pw == NULL || errno) {
         fprintf(stderr, "%s: %s.\n", argv[0], strerror(errno));
     } else {
         puts(pw->pw_name);
@@ -86,7 +84,7 @@ static int msh_cd(int argc, const char *const *argv)
         fprintf(stderr, "%s: expected argument to \"cd\".\n", argv[0]);
     } else if (argc > 2) {
         fprintf(stderr, "%s: excess arguments to \"cd\".\n", argv[0]);
-    } else if (chdir(argv[1])) {
+    } else if (chdir(argv[1]) == -1) {
         fprintf(stderr, "%s: %s.\n", argv[0], strerror(errno));
     }
     return MSH_SUCCESS;
@@ -127,14 +125,13 @@ static int msh_exit(int argc, const char *const *argv)
 }
 
 /* Calls fork and execvp to duplicate and replace a process, returns MSH_FAILURE 
- * on failure and MSH_SUCCESS on success.
- */
+ * on failure and MSH_SUCCESS on success. */
 static int msh_launch(const char *const *argv)
 {
     int status = 0;
     int pid = fork();
 
-    if (!pid) {
+    if (pid == 0) {
         if (execvp(argv[0], (char *const *) argv) == -1) {
             fprintf(stderr, "%s: %s.\n", argv[0], strerror(errno));
             return MSH_FAILURE;
@@ -154,8 +151,7 @@ static int msh_launch(const char *const *argv)
 }
 
 /* Returns MSH_SUCCESS in the absence of commands or return the result of the 
- * executed command if argv[0] was a built-in command.
- */
+ * executed command if argv[0] was a built-in command. */
 static int msh_execute(int argc, const char *const *argv)
 {
     if (!argv[0]) {
@@ -164,7 +160,7 @@ static int msh_execute(int argc, const char *const *argv)
     }
 
     for (size_t i = 0; i < ARRAY_CARDINALITY(builtin); ++i) {
-        if (!strcmp(argv[0], builtin[i].builtin_str)) {
+        if (strcmp(argv[0], builtin[i].builtin_str) == 0) {
             return (*builtin[i].func) (argc, argv);
         }
     }
@@ -173,8 +169,10 @@ static int msh_execute(int argc, const char *const *argv)
 
 /* Returns a char pointer on success, or a null pointer on failure.
 *  Caller must free the line on success.
-*  Otherwise, msh_read_line frees all allocations and set them to point to NULL.
-*/
+*
+* On memory allocation failure, sets err_code to ENOMEM, or EOF on end-of-file
+* or input error. Caller must use ferror() and feof() to distinguish between
+* the two. */
 static char *msh_read_line(int *err_code)
 {
     const size_t page_size = BUFSIZ;
@@ -189,7 +187,7 @@ static char *msh_read_line(int *err_code)
             size += page_size;
             char *new = realloc(content, size);
 
-            if (!new) {
+            if (new == NULL) {
                 *err_code = ENOMEM;
                 return NULL;
             }
@@ -198,14 +196,14 @@ static char *msh_read_line(int *err_code)
         int c = getc(stdin);
 
         if (c == EOF || c == '\n') {
-            if (feof(stdin)) {
-                free(content);
-                *err_code = EOF;
-                return NULL;
-            } else {
+            if (c == '\n' || (feof(stdin) && position > 0)) {
                 content[position] = '\0';
                 return content;
             }
+
+            free(content);
+            *err_code = EOF;
+            return NULL;
         } else {
             content[position] = (char) c;
         }
@@ -215,9 +213,8 @@ static char *msh_read_line(int *err_code)
     /* UNREACHED */
 }
 
-/* Returns a pointer to pointers to null-terminated strings, or a NULL pointer on failure. 
-*  The function does not free line in any case.
-*/
+/* Returns a pointer to pointers to null-terminated strings, or a NULL pointer 
+ * on failure.  The function does not free line in any case. */
 static char **msh_parse_args(char *line, int *argc)
 {
     const size_t page_size = 128;
@@ -230,7 +227,7 @@ static char **msh_parse_args(char *line, int *argc)
             size += page_size;
             char **tmp = realloc(tokens, size * sizeof *tmp);
 
-            if (!tmp) {
+            if (tmp == NULL) {
                 free(tokens);
                 return NULL;
             }
@@ -264,24 +261,34 @@ static int msh_loop(void)
         printf("%s:~/%s $ ", pw ? pw->pw_name : "", base_name ? base_name : "");
 
         int err_code = 0;
-
+        errno = 0;
         line = msh_read_line(&err_code);
-        if (!line) {
+
+        if (line == NULL) {
             if (err_code == ENOMEM) {
-                perror("realloc()");
+                fprintf(stderr, "error: failed to read line: cannot allocate memory.\n");
             }
+
+            if (err_code == EOF && ferror(stdin)) {
+                if (errno) {
+                    fprintf(stderr, "error: failed to read line: %s.\n", strerror(errno));
+                } else {
+                    fprintf(stderr, "error: failed to read line: unknown error.\n");
+                }
+            } 
+
             fputc('\n', stdout);
             goto out2;
         }
 
-        if (!*line) {
+        if (*line == '\0') {
             goto out1;
         }
 
         int argc = 0;
 
-        if (!(args = msh_parse_args(line, &argc))) {
-            perror("realloc()");
+        if ((args = msh_parse_args(line, &argc)) == NULL) {
+            fprintf(stderr, "error: cannot allocate memory.\n");
             goto out1;
         }
 
@@ -293,8 +300,9 @@ static int msh_loop(void)
       out2:
         free(cwd);
 
-        if (fail)
+        if (fail) {
             return 1;
+        }
     } while (status == MSH_SUCCESS);
 
     return status;
