@@ -213,38 +213,42 @@ static char *msh_read_line(int *err_code)
     /* UNREACHED */
 }
 
-/* Returns a pointer to pointers to null-terminated strings, or a NULL pointer 
- * on failure. The function does not free line in any case. 
+/* Returns a pointer to pointers to null-terminated strings terminated by a null
+ * pointer, or a null pointer on failure. 
+ *
+ * The function does not free line in any case. 
  *
  * Caller can distinguish between a memory allocation error and an empty line
  * by checking the value of *argc. A nonzero value indicates a memory allocation
  * error. */
 static char **msh_parse_args(char *line, int *argc)
 {
-    const size_t page_size = 128;
-    size_t position = 0;
-    size_t size = 0;
+    const size_t initial_capacity = 8;
+    size_t count = 0;
+    size_t capacity = 0;
     char **tokens = NULL;
 
     for (char *next = line; (next = strtok(next, MSH_TOK_DELIM)); next = NULL) {
-        if (position >= size) {
-            size += page_size;
-            char **tmp = realloc(tokens, size * sizeof *tmp);
+        if (count >= capacity) {
+            capacity += initial_capacity;
+            
+            /* +1 to always have space for the terminating null pointer. */
+            char **tmp = realloc(tokens, (capacity + 1) * sizeof *tmp);
 
             if (tmp == NULL) {
                 free(tokens);
-                *argc = (int) position;
+                *argc = (int) count;
                 return NULL;
             }
             tokens = tmp;
         }
-        tokens[position++] = next;
+        tokens[count++] = next;
     }
 
     if (tokens) {
-        tokens[position] = NULL;
+        tokens[count] = NULL;
     }
-    *argc = (int) position;
+    *argc = (int) count;
     return tokens;
 }
 
