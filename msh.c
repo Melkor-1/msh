@@ -214,7 +214,11 @@ static char *msh_read_line(int *err_code)
 }
 
 /* Returns a pointer to pointers to null-terminated strings, or a NULL pointer 
- * on failure.  The function does not free line in any case. */
+ * on failure. The function does not free line in any case. 
+ *
+ * Caller can distinguish between a memory allocation error and an empty line
+ * by checking the value of *argc. A nonzero value indicates a memory allocation
+ * error. */
 static char **msh_parse_args(char *line, int *argc)
 {
     const size_t page_size = 128;
@@ -229,6 +233,7 @@ static char **msh_parse_args(char *line, int *argc)
 
             if (tmp == NULL) {
                 free(tokens);
+                *argc = (int) position;
                 return NULL;
             }
             tokens = tmp;
@@ -243,22 +248,28 @@ static char **msh_parse_args(char *line, int *argc)
     return tokens;
 }
 
+static void msh_prompt(void)
+{
+    /* getuid() is always successful. */
+    const struct passwd *const pw = getpwuid(getuid());
+    char *cwd = getcwd(NULL, 0);
+    char *base_name = cwd ? basename(cwd) : NULL;
+
+    printf("%s:~/%s $ ", pw ? pw->pw_name : "", base_name ? base_name : "");
+    free(cwd);
+}
+
 static int msh_loop(void)
 {
     int status = MSH_SUCCESS;
     bool fail = false;
 
     do {
+        fail = false;
         char *line = NULL;
         char **args = NULL;
 
-        /* getuid() is always successful. */
-        const uid_t uid = getuid();
-        const struct passwd *const pw = getpwuid(uid);
-        char *cwd = getcwd(NULL, 0);
-        char *base_name = cwd ? basename(cwd) : NULL;
-
-        printf("%s:~/%s $ ", pw ? pw->pw_name : "", base_name ? base_name : "");
+        msh_prompt();
 
         int err_code = 0;
         errno = 0;
@@ -267,6 +278,7 @@ static int msh_loop(void)
         if (line == NULL) {
             if (err_code == ENOMEM) {
                 fprintf(stderr, "error: failed to read line: cannot allocate memory.\n");
+                fail = true;
             }
 
             if (err_code == EOF && ferror(stdin)) {
@@ -275,9 +287,12 @@ static int msh_loop(void)
                 } else {
                     fprintf(stderr, "error: failed to read line: unknown error.\n");
                 }
-            } 
+                fail = true;
+            } else {
+                fputc('\n', stdout);
+                return MSH_SUCCESS;
+            }
 
-            fputc('\n', stdout);
             goto out2;
         }
 
@@ -288,7 +303,10 @@ static int msh_loop(void)
         int argc = 0;
 
         if ((args = msh_parse_args(line, &argc)) == NULL) {
-            fprintf(stderr, "error: cannot allocate memory.\n");
+            if (argc) {
+                fprintf(stderr, "error: cannot allocate memory.\n");
+                fail = true;
+            }
             goto out1;
         }
 
@@ -298,10 +316,8 @@ static int msh_loop(void)
       out1:
         free(line);
       out2:
-        free(cwd);
-
         if (fail) {
-            return 1;
+            return MSH_FAILURE;
         }
     } while (status == MSH_SUCCESS);
 
@@ -310,5 +326,5 @@ static int msh_loop(void)
 
 int main(void)
 {
-    return msh_loop();
+    return msh_loop() ? EXIT_FAILURE : EXIT_SUCCESS;
 }
