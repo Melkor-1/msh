@@ -175,17 +175,17 @@ static int msh_execute(int argc, const char *const *argv)
 * the two. */
 static char *msh_read_line(int *err_code)
 {
-    const size_t page_size = BUFSIZ;
-    size_t position = 0;
+    const size_t chunk_size = BUFSIZ;
     size_t size = 0;
+    size_t capacity = 0;
     char *content = NULL;
 
     clearerr(stdin);
 
     for (;;) {
-        if (position >= size) {
-            size += page_size;
-            char *new = realloc(content, size);
+        if (size >= capacity) {
+            capacity += chunk_size;
+            char *new = realloc(content, capacity);
 
             if (new == NULL) {
                 *err_code = ENOMEM;
@@ -196,8 +196,8 @@ static char *msh_read_line(int *err_code)
         int c = getc(stdin);
 
         if (c == EOF || c == '\n') {
-            if (c == '\n' || (feof(stdin) && position > 0)) {
-                content[position] = '\0';
+            if (c == '\n' || (feof(stdin) && size > 0)) {
+                content[size] = '\0';
                 return content;
             }
 
@@ -205,9 +205,9 @@ static char *msh_read_line(int *err_code)
             *err_code = EOF;
             return NULL;
         } else {
-            content[position] = (char) c;
+            content[size] = (char) c;
         }
-        position++;
+        size++;
     }
 
     /* UNREACHED */
@@ -269,15 +269,10 @@ static int msh_loop(void)
     bool fail = false;
 
     do {
-        fail = false;
-        char *line = NULL;
-        char **args = NULL;
-
         msh_prompt();
 
         int err_code = 0;
-        errno = 0;
-        line = msh_read_line(&err_code);
+        char *line = (errno = 0, msh_read_line(&err_code));
 
         if (line == NULL) {
             if (err_code == ENOMEM) {
@@ -304,6 +299,7 @@ static int msh_loop(void)
             goto out1;
         }
 
+        char **args = NULL;
         int argc = 0;
 
         if ((args = msh_parse_args(line, &argc)) == NULL) {
